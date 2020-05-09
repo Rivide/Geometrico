@@ -1,0 +1,2 @@
+# Geometrico
+Geometric constraint solver.
