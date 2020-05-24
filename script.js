@@ -5,116 +5,172 @@ const geometrico = (function () {
   }
   const geo = (function () {
     const tolerance = 0.00001;
-    function hasObject(arr, Object) {
-      return arr.some(obj => obj instanceof Object);
-    }
     function sqr(n) {
       return n * n;
     }
-    function getCircleCircleIntersection(circle1, circle2) {
-      const displacement = circle2.center.minus(circle1.center);
-      const distance = displacement.magnitude;
-      if (geo.areEqual(distance, 0)) {
-        if (geo.areEqual(circle1.r, circle2.r)) {
-          return circle1;
+    function areEqual(x, y) {
+      return Math.abs(x - y) <= tolerance;
+    }
+    function isGreater(x, y) {
+      return x - y > tolerance;
+    }
+    function isGreaterOrEqual(x, y) {
+      return isGreater(x, y) || areEqual(x, y);
+    }
+    const getIntersection = (function () {
+      function getVectorVectorIntersection(vector1, vector2) {
+        return vector1.isCongruent(vector2) ? vector1 : null;
+      }
+      function getVectorCircleIntersection(vector, circle) {
+        return areEqual(getDistance(vector, circle.center), circle.r) ? vector : null;
+      }
+      function getCircleCircleIntersection(circle1, circle2) {
+        const displacement = circle2.center.minus(circle1.center);
+        const distance = displacement.magnitude;
+        if (geo.areEqual(distance, 0)) {
+          if (geo.areEqual(circle1.r, circle2.r)) {
+            return circle1;
+          }
+          return null;
         }
-        return null;
-      }
-      if (geo.isGreater(distance, circle1.r + circle2.r)) {
-        return null;
-      }
+        if (geo.isGreater(distance, circle1.r + circle2.r)) {
+          return null;
+        }
 
-      const centerToIntAxis = (sqr(circle1.r) - sqr(circle2.r) + sqr(distance)) / (2 * distance);
+        const centerToIntAxis = (sqr(circle1.r) - sqr(circle2.r) + sqr(distance)) / (2 * distance);
 
-      const intAxisMidpoint = circle1.center.plus(displacement.times(centerToIntAxis / distance));
-      if (geo.areEqual(centerToIntAxis, circle1.r)) {
-        return intAxisMidpoint;
+        const intAxisMidpoint = circle1.center.plus(displacement.times(centerToIntAxis / distance));
+        if (geo.areEqual(centerToIntAxis, circle1.r)) {
+          return intAxisMidpoint;
+        }
+        const intToCentralAxis = Math.sqrt(sqr(circle1.r) - sqr(centerToIntAxis));
+        const difference = new Vector(-displacement.y, displacement.x).dividedBy(distance).times(intToCentralAxis);
+        return new Locus([intAxisMidpoint.plus(difference), intAxisMidpoint.minus(difference)]);
       }
-      const intToCentralAxis = Math.sqrt(sqr(circle1.r) - sqr(centerToIntAxis));
-      const difference = new Vector(-displacement.y, displacement.x).dividedBy(distance).times(intToCentralAxis);
-      return new Locus([intAxisMidpoint.plus(difference), intAxisMidpoint.minus(difference)]);
-    }
-    function getLocusLocusIntersection(locus1, locus2) {
-      const intersections = [];
-      locus1.objects.forEach(obj => {
-        const intersection = getIntersection(obj, locus2);
-        intersections.push(intersection);
-      });
-      const locus = new Locus(intersections);
-      return locus.isEmpty() ? null : locus;
-    }
-    function getIntersection(obj1, obj2) {
-      const arr = [obj1, obj2];
-      for (let i = 0; i < arr.length; i++) {
-        const obj = arr[i];
-        const otherObj = arr[arr.length - 1 - i];
+      function getLocusLocusIntersection(locus1, locus2) {
+        const intersections = [];
+        locus1.objects.forEach(obj => {
+          const intersection = getIntersection(obj, locus2);
+          intersections.push(intersection);
+        });
+        const locus = new Locus(intersections);
+        return locus.isEmpty() ? null : locus;
+      }
+      return function (obj1, obj2) {
+        const arr = [obj1, obj2];
+        for (let i = 0; i < arr.length; i++) {
+          const obj = arr[i];
+          const otherObj = arr[arr.length - 1 - i];
 
+          if (obj instanceof Vector) {
+            if (otherObj instanceof Vector) {
+              return getVectorVectorIntersection(obj, otherObj);
+            }
+            else if (otherObj instanceof Circle) {
+              return getVectorCircleIntersection(obj, otherObj);
+            }
+          }
+          else if (obj instanceof Circle) {
+            if (otherObj instanceof Circle) {
+              return getCircleCircleIntersection(obj, otherObj);
+            }
+          }
+          else if (obj instanceof Locus) {
+            if (otherObj instanceof Locus) {
+              return getLocusLocusIntersection(obj, otherObj);
+            }
+            else {
+              const intersections = [];
+
+              obj.objects.forEach(childObj => {
+                intersections.push(geo.getIntersection(childObj, otherObj));
+              });
+
+              const locus = new Locus(intersections);
+              return locus.isEmpty() ? null : locus;
+            }
+          }
+        }
+      }
+    })();
+    const getDistance = (function () {
+      function getVectorVectorDistance(vector1, vector2) {
+        return vector1.minus(vector2).magnitude;
+      }
+      function getVectorCircleDistance(vector, circle) {
+        return Math.abs(getVectorVectorDistance(vector, circle.center) - circle.r);
+      }
+      function getCircleCircleDistance(circle1, circle2) {
+        const separation = getVectorVectorDistance(circle1.center, circle2.center);
+        //TODO: use compare functions instead of operators
+        const boundaryDistance = separation - circle1.r - circle2.r;
+        if (isGreaterOrEqual(boundaryDistance, 0)) {
+          return boundaryDistance;
+        }
+        else if (isGreaterOrEqual(separation, Math.abs(circle1.r - circle2.r))) {
+          return 0;
+        }
+        else {
+          return Math.abs(circle1.r - circle2.r) - separation;
+        }
+      }
+      return function (obj1, obj2) {
+        const arr = [obj1, obj2];
+        for (let i = 0; i < arr.length; i++) {
+          const obj = arr[i];
+          const otherObj = arr[arr.length - 1 - i];
+          if (obj instanceof Vector) {
+            if (otherObj instanceof Vector) {
+              return getVectorVectorDistance(obj1, obj2);
+            }
+            else if (otherObj instanceof Circle) {
+              return getVectorCircleDistance(obj, otherObj);
+            }
+          }
+          else if (obj instanceof Circle) {
+            if (otherObj instanceof Circle) {
+              return getCircleCircleDistance(obj1, obj2);
+            }
+          }
+        };
+      };
+    })();
+    const inflate = (function() {
+      function inflateVector(vector, radius) {
+        return new Circle(vector.x, vector.y, radius);
+      }
+      function inflateCircle(circle, radius) {
+        const largerCircle = new Circle(circle.x, circle.y, circle.r + radius);
+        if (isGreater(radius, circle.r)) {
+          return largerCircle;
+        }
+        else if (areEqual(radius, circle.r)) {
+          return new Locus([largerCircle, circle.center]);
+        }
+        else {
+          return new Locus([largerCircle, new Circle(circle.x, circle.y, circle.r - radius)]);
+        }
+      }
+      function inflateLocus(locus, radius) {
+        return new Locus(locus.objects.map(obj => inflate(obj, radius)));
+      }
+      return function(obj, radius) {
         if (obj instanceof Vector) {
-          if (otherObj instanceof Circle) {
-            return this.areEqual(this.getDistance(obj, otherObj), otherObj.r) ? obj : null;
-          }
-          else if (otherObj instanceof Vector) {
-            return obj.isCongruent(otherObj) ? obj : null;
-          }
+          return inflateVector(obj, radius);
         }
         else if (obj instanceof Circle) {
-          if (otherObj instanceof Circle) {
-            return getCircleCircleIntersection(obj, otherObj);
-          }
+          return inflateCircle(obj, radius);
         }
         else if (obj instanceof Locus) {
-          if (otherObj instanceof Locus) {
-            return getLocusLocusIntersection(obj, otherObj);
-          }
-          else {
-            const intersections = [];
-
-            obj.objects.forEach(childObj => {
-              intersections.push(geo.getIntersection(childObj, otherObj));
-            });
-
-            const locus = new Locus(intersections);
-            return locus.isEmpty() ? null : locus;
-          }
+          return inflateLocus(obj, radius);
         }
       }
-    }
+    })();
     return {
-      getDistance(obj1, obj2) {
-        const pair = [obj1, obj2];
-        const hasObj = hasObject.bind(null, pair);
-        if (hasObj(Vector)) {
-          if (hasObj(Line)) {
-
-          }
-          else {
-            return obj2.minus(obj1).magnitude;
-          }
-        }
-      },
-      areEqual(x, y) {
-        return Math.abs(x - y) <= tolerance;
-      },
-      isGreater(x, y) {
-        return x - y >= tolerance;
-      },
-      inflate(obj, radius) {
-        if (obj instanceof Vector) {
-          return new Circle(obj.x, obj.y, radius);
-        }
-        else if (obj instanceof Circle) {
-          const largerCircle = new Circle(obj.x, obj.y, obj.r + radius);
-          if (this.isGreater(radius, obj.r)) {
-            return largerCircle;
-          }
-          else if (this.areEqual(radius, obj.r)) {
-            return new Locus([largerCircle, obj.center]);
-          }
-          else {
-            return new Locus([largerCircle, new Circle(obj.x, obj.y, obj.r - radius)]);
-          }
-        }
-      },
+      getDistance,
+      areEqual,
+      isGreater,
+      inflate,
       getIntersection
     }
   })();
@@ -275,14 +331,36 @@ const geometrico = (function () {
     }
   }
   class ConstraintSolver {
-    static getFreedoms(objects, constraints) {
+    constructor(objects, constraints) {
+      this.objects = objects;
+      this.constraints = constraints;
+      this.constraintGraph = {};
+      this.freeConstraints = [];
+      this.freedoms = [];
+    }
+    solve() {
+      let freedoms = this.getFreedoms(this.constraints);
+      while (this.freeConstraints.length) {
+        console.log(this.freeConstraints);
+        const freeDependent = this.freeConstraints[0].dependents[0];
+        freedoms = freedoms.concat(this.getFreedoms([...this.freeConstraints, ConstraintSolver.fixConstraint(freeDependent, freeDependent)]));
+      }
+      console.log(this.freeConstraints);
+
+      
+      return freedoms;
+    }
+    getFreedoms(constraints) {
       const freedoms = [];
       const constraintsHandled = [];
+      const constrainedObjs = [];
       let newFreedoms = false;
       constraints.forEach(constraint => {
         if (constraint.dependents.length === 1) {
-          freedoms.push({ obj: constraint.dependents[0], freedom: constraint.getFreedom(constraint.dependents[0]) })
+          const obj = constraint.dependents[0];
+          freedoms.push({ obj: obj, freedom: constraint.getFreedom(constraint.dependents[0]) })
           constraintsHandled.push(constraint);
+          constrainedObjs.push(obj);
           constraints = constraints.filter(c => c !== constraint);
           newFreedoms = true;
         }
@@ -290,34 +368,46 @@ const geometrico = (function () {
       while (newFreedoms) {
         newFreedoms = false;
         constraints.forEach(constraint => {
-          let freeObj;
-          let constrainedObj;
+          let newObjConstrained;
+
           constraint.dependents.forEach((dependent, i, arr) => {
-            if (constraintsHandled.some(handeledConstraint => handeledConstraint.dependents.includes(dependent))) {
-              constrainedObj = dependent;
-              // freeObj is the other object in dependents
-              freeObj = arr[1 - i];
+            //console.log('i:', i);
+            //console.log(constraint);
+            if (constrainedObjs.includes(dependent)) {
+              const objToConstrain = arr[1 - i];
+              
+              const newFreedom = constraint.getFreedom(objToConstrain, freedoms);
+              if (!freedoms.some(freedom => {
+                if (freedom.obj === objToConstrain) {
+                  freedom.freedom = geo.getIntersection(freedom.freedom, newFreedom);
+                  return true;
+                }
+                else {
+                  return false;
+                }
+              })) {
+                freedoms.push({ obj: objToConstrain, freedom: newFreedom });
+              }
+              constraints = constraints.filter(c => c !== constraint);
+              constraintsHandled.push(constraint);
+              if (!constrainedObjs.includes(objToConstrain)) {
+                newObjConstrained = objToConstrain;
+              }
+              freedoms.forEach(freedom => {
+                //console.log(freedom.obj.id);
+                //console.log(freedom.freedom);
+              });
+              console.log(' ');
+              newFreedoms = true;
             }
           });
-          if (freeObj && constrainedObj) {
-            const newFreedom = constraint.getFreedom(freeObj, freedoms);
-            if (!freedoms.some(freedom => {
-              if (freedom.obj === freeObj) {
-                freedom.freedom = geo.getIntersection(freedom.freedom, newFreedom);
-                return true;
-              }
-              else {
-                return false;
-              }
-            })) {
-              freedoms.push({ obj: freeObj, freedom: newFreedom });
-            }
-            constraints = constraints.filter(c => c !== constraint);
-            constraintsHandled.push(constraint);
-            newFreedoms = true;
+
+          if (newObjConstrained) {
+            constrainedObjs.push(newObjConstrained);
           }
         });
       }
+      this.freeConstraints = constraints;
       return freedoms;
     }
     static fixConstraint(obj, target) {
@@ -357,7 +447,7 @@ const geometrico = (function () {
     },
     Camera,
     Controller,
-    ConstraintSolver,
+    ConstraintSolver: ConstraintSolver,
     geo,
     run: function (loop) {
       let now = 0;
@@ -401,23 +491,24 @@ geometrico.run(
     });*/
     const v3 = new Vector(75, 75);
     controller.addObject(v3);
-    const v4 = new Vector(50, 75);
+    const v4 = new Vector(30, 0);
     controller.addObject(v4);
     let now = 0;
     return function (deltaTime) {
       controller.update(deltaTime);
-      const freedoms = ConstraintSolver.getFreedoms(controller.objects, [
-        ConstraintSolver.fixConstraint(v1, new Vector(0, 0)),
-        ConstraintSolver.distanceConstraint(v2, v1, 10),
-        ConstraintSolver.distanceConstraint(v3, v2, 40),
-        ConstraintSolver.distanceConstraint(v4, v3, 20),
-        ConstraintSolver.distanceConstraint(v4, v2, 20)
-      ]);
-      cam.clear(ctx);
-      cam.render(ctx, controller.objects, renderStyle);
-      cam.render(ctx, freedoms.map(freedom => freedom.freedom), freedomStyle);
       if (!now) {
+        const freedoms = new ConstraintSolver(controller.objects, [
+          //ConstraintSolver.fixConstraint(v1, new Vector(0, 0)),
+          ConstraintSolver.distanceConstraint(v2, v1, 10),
+          ConstraintSolver.distanceConstraint(v3, v2, 40),
+          ConstraintSolver.distanceConstraint(v4, v3, 20),
+          ConstraintSolver.distanceConstraint(v4, v2, 20),
+          //ConstraintSolver.fixConstraint(v4, v4)
+        ]).solve();
         console.log(freedoms);
+        cam.clear(ctx);
+        cam.render(ctx, controller.objects, renderStyle);
+        cam.render(ctx, freedoms.map(freedom => freedom.freedom), freedomStyle);
       }
       now += deltaTime;
     }
