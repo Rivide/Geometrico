@@ -47,14 +47,8 @@ const geometrico = (function () {
         const difference = new Vector(-displacement.y, displacement.x).dividedBy(distance).times(intToCentralAxis);
         return new Locus([intAxisMidpoint.plus(difference), intAxisMidpoint.minus(difference)]);
       }
-      function getLocusLocusIntersection(locus1, locus2) {
-        const intersections = [];
-        locus1.objects.forEach(obj => {
-          const intersection = getIntersection(obj, locus2);
-          intersections.push(intersection);
-        });
-        const locus = new Locus(intersections);
-        return locus.isEmpty() ? null : locus;
+      function getLocusIntersection(locus, obj) {
+        return Locus.build(locus.objects.map(childObj => getIntersection(childObj, obj)));
       }
       return function (obj1, obj2) {
         const arr = [obj1, obj2];
@@ -76,19 +70,7 @@ const geometrico = (function () {
             }
           }
           else if (obj instanceof Locus) {
-            if (otherObj instanceof Locus) {
-              return getLocusLocusIntersection(obj, otherObj);
-            }
-            else {
-              const intersections = [];
-
-              obj.objects.forEach(childObj => {
-                intersections.push(geo.getIntersection(childObj, otherObj));
-              });
-
-              const locus = new Locus(intersections);
-              return locus.isEmpty() ? null : locus;
-            }
+            return getLocusIntersection(obj, otherObj);
           }
         }
       }
@@ -152,7 +134,7 @@ const geometrico = (function () {
         }
       }
       function inflateLocus(locus, radius) {
-        return new Locus(locus.objects.map(obj => inflate(obj, radius)));
+        return Locus.build(locus.objects.map(obj => inflate(obj, radius)));
       }
       return function(obj, radius) {
         if (obj instanceof Vector) {
@@ -239,6 +221,18 @@ const geometrico = (function () {
     constructor(objects) {
       super();
       this.objects = objects.filter(obj => obj);
+    }
+    static build(objects) {
+      objects = objects.filter(obj => obj);
+      if (!objects.length) {
+        return null;
+      }
+      else if (objects.length === 1) {
+        return objects[0];
+      }
+      else {
+        return new Locus(objects);
+      }
     }
     isEmpty() {
       return this.objects.length === 0;
