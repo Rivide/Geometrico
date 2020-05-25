@@ -117,7 +117,7 @@ const geometrico = (function () {
         };
       };
     })();
-    const inflate = (function() {
+    const inflate = (function () {
       function inflateVector(vector, radius) {
         return new Circle(vector.x, vector.y, radius);
       }
@@ -136,7 +136,7 @@ const geometrico = (function () {
       function inflateLocus(locus, radius) {
         return Locus.build(locus.objects.map(obj => inflate(obj, radius)));
       }
-      return function(obj, radius) {
+      return function (obj, radius) {
         if (obj instanceof Vector) {
           return inflateVector(obj, radius);
         }
@@ -148,12 +148,47 @@ const geometrico = (function () {
         }
       }
     })();
+    const getClosestPoint = (function () {
+      function getVectorClosestPoint(obj) {
+        return obj;
+      }
+      function getCircleClosestPoint(obj, point) {
+        if (obj.center.isCongruent(point)) {
+          return obj.center.plus(new Vector(0, obj.r));
+        }
+        //console.log(point);
+        return obj.center.plus(point.minus(obj.center).normalized().times(obj.r));
+      }
+      function getLocusClosestPoint(obj, point) {
+        let prevDistance = Infinity;
+        return obj.objects.map(child => getClosestPoint(child, point)).reduce((prevPoint, curPoint) => {
+          const curDistance = getDistance(curPoint, point)
+          if (isGreater(prevDistance, curDistance)) {
+            prevDistance = curDistance;
+            return curPoint;
+          }
+          return prevPoint;
+        });
+      }
+      return function (obj, point) {
+        if (obj instanceof Vector) {
+          return getVectorClosestPoint(obj);
+        }
+        else if (obj instanceof Circle) {
+          return getCircleClosestPoint(obj, point);
+        }
+        else if (obj instanceof Locus) {
+          return getLocusClosestPoint(obj, point);
+        }
+      };
+    })();
     return {
       getDistance,
       areEqual,
       isGreater,
       inflate,
-      getIntersection
+      getIntersection,
+      getClosestPoint
     }
   })();
   class GeoObject {
@@ -188,6 +223,9 @@ const geometrico = (function () {
     }
     translate(vector) {
       return this.plus(vector).withID(vector.id);
+    }
+    normalized() {
+      return this.dividedBy(this.magnitude);
     }
     get magnitude() {
       return Math.sqrt(this.x * this.x + this.y * this.y);
@@ -317,6 +355,9 @@ const geometrico = (function () {
           const image = this.scripts[i](obj, { deltaTime, time: this.time, objects: this.objects });
 
           if (image || image === null) {
+            if (image) {
+              image.id = i;
+            }
             return image;
           }
         }
@@ -334,14 +375,29 @@ const geometrico = (function () {
     }
     solve() {
       let freedoms = this.getFreedoms(this.constraints);
+      const constraints = this.constraints;
       while (this.freeConstraints.length) {
-        console.log(this.freeConstraints);
+        //console.log(this.freeConstraints);
         const freeDependent = this.freeConstraints[0].dependents[0];
-        freedoms = freedoms.concat(this.getFreedoms([...this.freeConstraints, ConstraintSolver.fixConstraint(freeDependent, freeDependent)]));
-      }
-      console.log(this.freeConstraints);
 
-      
+        const newConstraint = ConstraintSolver.fixConstraint(freeDependent, freeDependent);
+        constraints.push(newConstraint);
+
+        freedoms = freedoms.concat(this.getFreedoms([...this.freeConstraints, newConstraint]));
+      }
+      //console.log(this.freeConstraints);
+      while (true) {
+        let freeFreedoms = freedoms.filter(freedom => !(freedom.freedom instanceof Vector));
+        if (freeFreedoms.length) {
+          const freedom = freeFreedoms[0];
+          constraints.push(ConstraintSolver.fixConstraint(freedom.obj, geo.getClosestPoint(freedom.freedom, freedom.obj)));
+          freedoms = this.getFreedoms(constraints);
+        }
+        else {
+          break;
+        }
+      }
+
       return freedoms;
     }
     getFreedoms(constraints) {
@@ -369,7 +425,7 @@ const geometrico = (function () {
             //console.log(constraint);
             if (constrainedObjs.includes(dependent)) {
               const objToConstrain = arr[1 - i];
-              
+
               const newFreedom = constraint.getFreedom(objToConstrain, freedoms);
               if (!freedoms.some(freedom => {
                 if (freedom.obj === objToConstrain) {
@@ -391,7 +447,7 @@ const geometrico = (function () {
                 //console.log(freedom.obj.id);
                 //console.log(freedom.freedom);
               });
-              console.log(' ');
+              //console.log(' ');
               newFreedoms = true;
             }
           });
@@ -475,7 +531,11 @@ geometrico.run(
 
     const controller = new geometrico.Controller();
     const v1 = new Vector(30, 30);
-    controller.addObject(v1);
+    controller.addObject(v1, (vector, args) => {
+      //if (args.time <= args.deltaTime) {
+      return vector.translate(new Vector(.5, .5));
+      //}
+    });
     const v2 = new Vector(50, 50);
     controller.addObject(v2);
     /*controller.addObject(new Vector(50, 50), (vector, args) => {
@@ -490,7 +550,7 @@ geometrico.run(
     let now = 0;
     return function (deltaTime) {
       controller.update(deltaTime);
-      if (!now) {
+      //if (!now) {
         const freedoms = new ConstraintSolver(controller.objects, [
           //ConstraintSolver.fixConstraint(v1, new Vector(0, 0)),
           ConstraintSolver.distanceConstraint(v2, v1, 10),
@@ -499,11 +559,11 @@ geometrico.run(
           ConstraintSolver.distanceConstraint(v4, v2, 20),
           //ConstraintSolver.fixConstraint(v4, v4)
         ]).solve();
-        console.log(freedoms);
+        //console.log(freedoms);
         cam.clear(ctx);
         cam.render(ctx, controller.objects, renderStyle);
         cam.render(ctx, freedoms.map(freedom => freedom.freedom), freedomStyle);
-      }
+      //}
       now += deltaTime;
     }
   })()
